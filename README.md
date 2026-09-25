@@ -1,33 +1,30 @@
 # dsh-codex-mcp
 
-An MCP server that runs the locally installed **Codex CLI** (`codex exec`) inside an
-isolated scratch directory and hands the result back to the agent as **paths, sizes and
-sha256 hashes — never as inlined file bodies**. Zero dependencies, offline test suite.
+Hand a job to the **Codex CLI** on your machine and get the result back in a form you can
+review — without giving Codex write access to your project.
 
-## Why it exists
+## What it does
 
-Two facts about `codex exec` shape this design:
+- **Runs one Codex task.** Give it a complete job — "review this plan", "review this patch" —
+  and it runs `codex exec` and brings back Codex's answer.
+- **Keeps Codex away from your files.** Codex works in its own temporary folder. It can read
+  your project, but it can only write inside that folder.
+- **Hands you a list, not a wall of text.** You get Codex's answer plus a list of the files it
+  produced, with their size and a sha256 checksum. You open what you need, decide, and copy in
+  only what you approve.
+- **One tool, one job.** Nothing else to learn or configure.
 
-1. **It defaults to Codex's read-only sandbox.** A wrapper that passes no sandbox flag gets
-   a Codex that cannot write a single file, so the only channel back is the final message
-   text — which means large artifacts get truncated or paraphrased.
-2. **The caller decides what reaches the workspace.** Codex can *read* the workspace, but
-   it must not *write* it. Artifacts land in a staging directory, the agent reviews them,
-   and only then does anything get copied into a real destination.
+Typical uses: reviewing a plan, reviewing a patch or a pull request, getting a second opinion.
 
-Measured on macOS with `-s workspace-write -C <staging>/<runId>/work`:
+## Requirements
 
-| Probe | Result |
-| --- | --- |
-| Codex writes a file in its own working directory | allowed |
-| Codex writes a file in the enclosing workspace | denied: `zsh:1: operation not permitted` |
+- Node.js 22.19+ or 24+
+- A working `codex` CLI on the same machine, already logged in
 
 ## Install
 
-Add the row in [`cordis.patch.yml`](cordis.patch.yml) to your profile patch layer,
-replacing the `/absolute/path/...` placeholders:
-
-`~/.dsh/profiles/<name>/cordis.patch.yml`
+1. Add this block to the end of `~/.dsh/profiles/<your-profile>/cordis.patch.yml`, replacing
+   every `/absolute/path/...` with a real path:
 
 ```yaml
 - insert:
@@ -44,116 +41,78 @@ replacing the `/absolute/path/...` placeholders:
         failOnStartupError: true
 ```
 
-**No restart needed in practice.** Measured 2026-09-25: appending this row to the `desktop`
-profile's patch layer made `mcp__codex__run` available **in the same session**, even though
-only the `web` profile declares `patchReload: live`. Bundle membership changes
-(`dsh plugin add/remove`) are the real startup boundary. If the tool does not appear, read the
-server's stderr — never patch the DSH source; this integration is user-directory only.
+2. Restart the DSH app once. (In practice it also works without a restart — when we tested it,
+   the new row was live in the same session.)
 
-The tool then appears as `mcp__codex__run`.
+You now have one new tool: `mcp__codex__run`.
 
-## Tool surface
+## Usage
 
-One tool, on purpose: every tool schema is a permanent context tax.
+Ask your agent for a review and it calls the tool for you. The arguments:
 
-### `mcp__codex__run`
-
-| Argument | Required | Meaning |
+| Argument | Required | What it means |
 | --- | --- | --- |
-| `prompt` | yes | The complete, self-contained task. Codex does not see your conversation. |
-| `model` | no | Codex model id for this call, e.g. `gpt-6-astra` for plan review. Defaults to `$CODEX_MCP_MODEL`, else Codex's own configuration. |
-| `files` | no | Explicit artifact paths (relative to the artifact root) to report. Defaults to every file the run created. |
-| `timeoutMs` | no | Deadline for the whole run. Defaults to `$CODEX_MCP_TIMEOUT_MS`, else `900000`. |
+| `prompt` | yes | The whole job, written out. Codex cannot see your chat, so include the paths it should read and the file name it should write. |
+| `model` | no | Which Codex model to use, for example `gpt-6-astra` for careful reviews. Defaults to your Codex setting. |
+| `files` | no | Report only these files. Defaults to everything the run created. |
+| `timeoutMs` | no | How long the run may take, in milliseconds. Default: 15 minutes. |
 
-The result reports `ok`, exit code, duration, thread id, token usage, Codex's final
-message, and the artifact list:
+What comes back looks like this:
 
 ```
-ok  exit=0  41.2s  model=gpt-6-astra
-run        run-20260925-173301-a1b2
-artifact   /path/to/workspace/.codex-staging/run-20260925-173301-a1b2/work
-manifest   /path/to/workspace/.codex-staging/run-20260925-173301-a1b2/manifest.json
-usage      input=18856 cached=0 output=2048
-
+ok  exit=0  140.1s  model=gpt-6-astra  terminal=yes
+run        run-20260925-181307-9c44
+artifact   /path/to/your/workspace/.codex-staging/run-20260925-181307-9c44/work
+manifest   /path/to/your/workspace/.codex-staging/run-20260925-181307-9c44/manifest.json
 final message
 -------------
 review written to review.md
-
 artifacts (1) — bodies are NOT included, read them yourself
 -------------
-    3412 B  sha256:1a2b3c4d5e6f7a8b  review.md
+    2500 B  sha256:6676042702213315  review.md
 ```
 
-Read `review.md`, decide, then copy what you approve. Bodies are never inlined, so a large
-artifact costs nothing until you actually read it.
+`artifact` is the folder Codex was allowed to write. Open the files listed under it, read them,
+then copy the parts you agree with into your project.
 
-## CLI
+**Tip:** put a size limit in your prompt ("at most 60 lines", "top 5 risks only"). Long answers
+can be cut off by the model provider; short, structured ones come back reliably.
 
-The CLI shares every module with the server and carries the diagnostics that are kept out
-of the MCP surface:
+## Command line (optional)
+
+The same engine, handy for trying things by hand:
 
 ```sh
-codex-mcp env                              # how Codex will be launched, staging root, defaults
-codex-mcp run -p "TASK" -m gpt-6-astra     # one run, text manifest
-codex-mcp run --prompt-file task.md --json # one run, JSON manifest
-codex-mcp runs --limit 5                   # finished runs under the staging root
-codex-mcp prune --older-than-days 7 --keep 5   # delete old staged runs (--dry-run reports only)
-codex-mcp serve                            # the MCP server on stdio
+codex-mcp run -p "Review the plan at plan/foo.md and write review.md" -m gpt-6-astra
+codex-mcp runs                                  # list finished runs
+codex-mcp prune --older-than-days 7 --keep 5    # clear old temporary runs
+codex-mcp env                                   # show how Codex will be started
 ```
 
-`codex-mcp run` exits `0` on success, `1` on a failed run, `2` on a usage error.
+## Settings (optional)
 
-## Configuration
-
-All optional; every default is portable.
-
-| Variable | Effect |
+| Variable | What it does |
 | --- | --- |
-| `CODEX_MCP_ENTRY` | Absolute path to the Codex entry point. Overrides discovery. |
-| `CODEX_MCP_MODEL` | Default model id when a call passes none. |
-| `CODEX_MCP_TIMEOUT_MS` | Default per-run deadline. |
-| `CODEX_MCP_STAGING_DIR` | Staging root. Default `<cwd>/.codex-staging`. |
+| `CODEX_MCP_ENTRY` | Full path to the `codex` program, if it is not found automatically. |
+| `CODEX_MCP_MODEL` | Default model when a call does not name one. |
+| `CODEX_MCP_TIMEOUT_MS` | Default time limit for a run. |
+| `CODEX_MCP_STAGING_DIR` | Where temporary run folders go. Default: `<your-workspace>/.codex-staging`. |
 
-Entry-point discovery order: `CODEX_MCP_ENTRY` → `~/.local/bin/codex-desktop` (a wrapper
-that pins the interpreter) → `~/.npm-global/lib/node_modules/@openai/codex/bin/codex.js` →
-`codex` on `PATH`. Script entries are always spawned with the current node binary, so a
-`#!/usr/bin/env node` shim never fails with `env: node: No such file or directory`.
+## Safety
 
-## Security model
+- Codex can read your project, but it can only write inside the temporary folder for that run.
+- Commands Codex runs cannot reach the network, so it cannot upload your files.
+- Codex uses its own login. This tool never reads, stores or forwards your keys.
+- Nothing Codex produces enters your project by itself — you decide what to copy.
 
-- `-s workspace-write` is **not** a tool parameter. A caller cannot widen or narrow the
-  sandbox; the server always passes `workspace-write`.
-- `-C` points at `<staging>/<runId>/work`, so Codex's writable root is the scratch
-  directory. The workspace itself stays read-only to Codex (verified above).
-- Sandboxed shell commands have **no network by default** (measured: `curl` returned
-  `http_code 000`, exit 7), so a prompt-injected command cannot exfiltrate file contents.
-- Artifact paths are resolved **inside** the artifact root: a path that escapes it, or a
-  symbolic link, is reported as `rejected` — never read and never hashed.
-- Run ids are format-checked, cannot escape the staging root, and an existing run directory
-  is never overwritten.
-- Credential-shaped environment variables (`/KEY|PASSWORD|SECRET|TOKEN/i`) are not inherited
-  by Codex. Per-call `env` overrides are taken as explicit and trusted.
-- A timeout kills the whole process group on POSIX, not just the direct child.
-- `ok` means: exit 0, no error event, no timeout, **and something delivered** — a final
-  message or at least one artifact. Codex legitimately exits 0 with an empty reply when the
-  file *is* the answer, so an artifact-only run counts; a clean exit with neither does not.
-  `terminalEvent` and `warnings` are reported separately instead of being folded into `ok`.
-- The staging root is a staging area, not a destination: `.codex-staging/` is gitignored and
-  `codex-mcp prune` clears it (default: keep runs newer than 7 days and the newest N runs).
-- No API key or credential is read, stored or forwarded by this server. Codex uses its own
-  authentication.
-
-## Tests
+## Development
 
 ```sh
 node --test tests/*.test.mjs
 ```
 
-39 offline tests: a fake `codex exec` fixture emulates the JSONL stream, writes scratch
-files, and can fail, stay silent or hang on demand — plus explicit coverage for path
-escapes, symlinks, run-id traversal, credential inheritance, deliverable semantics,
-rejected-artifact rendering and pruning. No network call, no model spend. The live path is
-covered separately by `scripts/live-review.mjs`, which does spend money.
+The tests are offline: they use a fake Codex, so they never call a model and cost nothing.
+For a real run there is `scripts/live-review.mjs` — that one does cost money.
 
 ## License
 

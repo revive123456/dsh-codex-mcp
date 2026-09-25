@@ -88,11 +88,29 @@ describe('repository hygiene', () => {
     assert.ok(existsSync(join(ROOT, 'src', 'server.mjs')))
   })
 
-  it('documents the restart requirement and the artifact-handling rule', () => {
+  it('keeps the README aimed at users, not at the implementation', () => {
     const readme = readFileSync(join(ROOT, 'README.md'), 'utf8')
-    assert.match(readme, /restart/i)
+    // The three questions a user-facing README answers.
+    assert.match(readme, /## What it does/)
+    assert.match(readme, /## Install/)
+    assert.match(readme, /## Usage/)
+    assert.match(readme, /## Safety/)
     assert.match(readme, /restart/i)
     assert.match(readme, /sha256/)
+
+    // Short enough to actually read, and free of internal vocabulary.
+    const lines = readme.split('\n').length
+    assert.ok(lines <= 130, `README grew to ${lines} lines; move detail into JSDoc instead`)
+    const jargon = ['JSON-RPC', 'process group', 'detached', 'seatbelt', 'symlink', 'containment', 'stdout']
+    for (const term of jargon) {
+      assert.ok(!readme.toLowerCase().includes(term.toLowerCase()), `README should not expose "${term}"`)
+    }
+
+    // The Chinese README mirrors the same three questions.
+    const zh = readFileSync(join(ROOT, 'README.zh.md'), 'utf8')
+    assert.match(zh, /## 安装/)
+    assert.match(zh, /## 怎么用/)
+    assert.ok(zh.split('\n').length <= 130, 'the Chinese README should stay short too')
   })
 
   it('ignores the local staging area', () => {
