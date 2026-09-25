@@ -1,0 +1,50 @@
+{
+  "name": "dsh-codex-mcp",
+  "version": "0.1.0",
+  "description": "Zero-dependency MCP server that runs the local Codex CLI in an isolated scratch directory and hands its artifacts back to the agent as paths plus hashes — never as inlined content.",
+  "type": "module",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/revive123456/dsh-codex-mcp.git"
+  },
+  "homepage": "https://github.com/revive123456/dsh-codex-mcp#readme",
+  "bugs": {
+    "url": "https://github.com/revive123456/dsh-codex-mcp/issues"
+  },
+  "engines": {
+    "node": "^22.19.0 || >=24.0.0"
+  },
+  "bin": {
+    "codex-mcp": "bin/codex-mcp.mjs"
+  },
+  "main": "src/index.mjs",
+  "exports": {
+    ".": "./src/index.mjs",
+    "./server": "./src/server.mjs",
+    "./cli": "./src/cli.mjs",
+    "./run": "./src/run.mjs",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "bin",
+    "src",
+    "README.md",
+    "README.zh.md",
+    "LICENSE",
+    "cordis.patch.yml"
+  ],
+  "scripts": {
+    "test": "node --test tests/*.test.mjs",
+    "start": "node src/server.mjs"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "dsh",
+    "deepseek-harness",
+    "codex",
+    "openai-codex",
+    "plan-review"
+  ]
+}

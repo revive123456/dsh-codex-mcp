@@ -1,0 +1,22 @@
+# Dependencies
+node_modules/
+package-lock.json
+pnpm-lock.yaml
+yarn.lock
+
+# Codex scratch directories: staging area for artifacts awaiting review
+.codex-staging/
+
+# Local overrides
+*.env
+!config.example.env
+
+# Editor and OS noise
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+
+# Test scratch
+tests/.tmp/

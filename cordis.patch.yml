@@ -1,0 +1,36 @@
+# Example profile patch: mount dsh-codex-mcp as an MCP server.
+#
+# This file is a ready-to-use snippet, NOT a bundle layer. Copy the block below
+# into `~/.dsh/profiles/<name>/cordis.patch.yml` (append; never overwrite the
+# rest of that file). ONE entry connects exactly ONE MCP server, and the tools
+# appear to the agent as `mcp__<serverName>__<rawName>` — here `mcp__codex__run`.
+#
+# Restart semantics (measured 2026-09-25): appending this row took effect in the
+# SAME session, without restarting the app, even though only the `web` profile
+# declares `patchReload: live`. Bundle membership changes are the real startup
+# boundary. Nothing in the DSH source tree is touched.
+#
+# Replace every /absolute/path/... below with your own absolute paths. Absolute
+# paths are required because the desktop app is launched by Finder with a
+# minimal PATH (/usr/bin:/bin:/usr/sbin:/sbin): a bare `node` or a relative
+# path will not resolve.
+
+- insert:
+    - id: mcp-codex
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        transport: stdio
+        # Must match [A-Za-z0-9_-]{1,32}; tools become mcp__codex__<name>.
+        serverName: codex
+        # Absolute path to the node binary that runs the server, for example
+        # `command -v node` on this machine.
+        command: /absolute/path/to/node
+        args:
+          - /absolute/path/to/dsh-codex-mcp/src/server.mjs
+        # The workspace the agent works in. Runs are staged under
+        # <cwd>/.codex-staging/<runId>/work.
+        cwd: /absolute/path/to/your/workspace
+        # Keep this above CODEX_MCP_TIMEOUT_MS (default 900000) so the harness
+        # does not cut a long Codex review short before Codex's own deadline.
+        toolCallTimeoutMs: 900000
+        failOnStartupError: true
